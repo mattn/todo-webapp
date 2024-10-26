@@ -13,11 +13,11 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-oci8"
 
 	"github.com/labstack/echo/v4"
 	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/dialect/oracledialect"
 	"github.com/uptrace/bun/extra/bundebug"
 )
 
@@ -37,6 +37,14 @@ type Todo struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time `bun:",nullzero"`
 	DeletedAt time.Time `bun:",soft_delete,nullzero"`
+}
+
+func (t *Todo) BeforeCreateTable(ctx context.Context, q *bun.CreateTableQuery) error {
+	_, err := q.DB().NewDropTable().Model((*Todo)(nil)).Exec(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 type Data struct {
@@ -74,13 +82,13 @@ func formatDateTime(d time.Time) string {
 }
 
 func main() {
-	sqldb, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	sqldb, err := sql.Open("oci8", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer sqldb.Close()
 
-	db := bun.NewDB(sqldb, pgdialect.New())
+	db := bun.NewDB(sqldb, oracledialect.New())
 	db.AddQueryHook(bundebug.NewQueryHook(
 		bundebug.WithVerbose(true),
 		bundebug.FromEnv("BUNDEBUG"),
@@ -142,14 +150,14 @@ func main() {
 			ctx := context.Background()
 			if c.FormValue("delete") != "" {
 				// 削除
-				_, err = db.NewDelete().Model(&todo).Where("id = ?", todo.ID).Exec(ctx)
+				_, err = db.NewDelete().Model(&todo).Where(`"id" = ?`, todo.ID).Exec(ctx)
 			} else {
 				// 更新
 				var orig Todo
-				err = db.NewSelect().Model(&orig).Where("id = ?", todo.ID).Scan(ctx)
+				err = db.NewSelect().Model(&orig).Where(`"id" = ?`, todo.ID).Scan(ctx)
 				if err == nil {
 					orig.Done = todo.Done
-					_, err = db.NewUpdate().Model(&orig).Where("id = ?", todo.ID).Exec(ctx)
+					_, err = db.NewUpdate().Model(&orig).Where(`"id" = ?`, todo.ID).Exec(ctx)
 				}
 			}
 			if err != nil {
