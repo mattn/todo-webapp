@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"embed"
 	"errors"
 	"html/template"
@@ -17,8 +16,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/oracledialect"
-	"github.com/uptrace/bun/extra/bundebug"
 )
 
 //go:embed static
@@ -37,14 +34,6 @@ type Todo struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time `bun:",nullzero"`
 	DeletedAt time.Time `bun:",soft_delete,nullzero"`
-}
-
-func (t *Todo) BeforeCreateTable(ctx context.Context, q *bun.CreateTableQuery) error {
-	_, err := q.DB().NewDropTable().Model((*Todo)(nil)).Exec(ctx)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 type Data struct {
@@ -81,35 +70,8 @@ func formatDateTime(d time.Time) string {
 	return d.Format("2006-01-02 15:04")
 }
 
-func main() {
-	sqldb, err := sql.Open("oci8", os.Getenv("DATABASE_URL"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer sqldb.Close()
-
-	db := bun.NewDB(sqldb, oracledialect.New())
-	db.AddQueryHook(bundebug.NewQueryHook(
-		bundebug.WithVerbose(true),
-		bundebug.FromEnv("BUNDEBUG"),
-	))
-
-	ctx := context.Background()
-	_, err = db.NewCreateTable().Model((*Todo)(nil)).IfNotExists().Exec(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	e := echo.New()
-
-	e.Renderer = &Template{
-		templates: template.Must(template.New("").
-			Funcs(template.FuncMap{
-				"FormatDateTime": formatDateTime,
-			}).ParseFS(templates, "templates/*")),
-	}
-
-	e.GET("/", func(c echo.Context) error {
+func indexFunc(e *echo.Echo, db *bun.DB) func(c echo.Context) error {
+	return func(c echo.Context) error {
 		var todos []Todo
 		ctx := context.Background()
 		err := db.NewSelect().Model(&todos).Order("created_at").Scan(ctx)
@@ -120,9 +82,12 @@ func main() {
 			})
 		}
 		return c.Render(http.StatusOK, "index", Data{Todos: todos})
-	})
+	}
+}
 
-	e.POST("/", func(c echo.Context) error {
+func postFunc(e *echo.Echo, db *bun.DB) func(c echo.Context) error {
+	return func(c echo.Context) error {
+		var err error
 		var todo Todo
 		// フォームパラメータをフィールドにバインド
 		errs := echo.FormFieldBinder(c).
@@ -132,7 +97,7 @@ func main() {
 			CustomFunc("until", customFunc(&todo)).
 			BindErrors()
 		if errs != nil {
-			e.Logger.Error(err)
+			e.Logger.Error(errs)
 			return c.Render(http.StatusBadRequest, "index", Data{Errors: errs})
 		} else if todo.ID == 0 {
 			// ID が 0 の時は登録
@@ -169,13 +134,43 @@ func main() {
 			return c.Render(http.StatusBadRequest, "index", Data{Errors: []error{err}})
 		}
 		return c.Redirect(http.StatusFound, "/")
-	})
+	}
+}
+
+func main() {
+	sqldb, err := setupDB(os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer sqldb.Close()
+
+	db, err := setupBunDB(sqldb)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx := context.Background()
+	_, err = db.NewCreateTable().Model((*Todo)(nil)).IfNotExists().Exec(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	e := echo.New()
+	e.Renderer = &Template{
+		templates: template.Must(template.New("").
+			Funcs(template.FuncMap{
+				"FormatDateTime": formatDateTime,
+			}).ParseFS(templates, "templates/*")),
+	}
 
 	staticFs, err := fs.Sub(static, "static")
 	if err != nil {
 		log.Fatal(err)
 	}
 	fileServer := http.FileServer(http.FileSystem(http.FS(staticFs)))
+
+	e.GET("/", indexFunc(e, db))
+	e.POST("/", postFunc(e, db))
 	e.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", fileServer)))
+
 	e.Logger.Fatal(e.Start(":8989"))
 }
