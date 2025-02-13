@@ -1,10 +1,11 @@
 //go:build !database_oci8 && !database_mysql
-// +build !database_oci8,!database_mysql
 
 package main
 
 import (
 	"database/sql"
+
+	_ "github.com/lib/pq"
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
@@ -12,7 +13,7 @@ import (
 )
 
 func setupDB(s string) (*sql.DB, error) {
-	return sql.Open("pq", s)
+	return sql.Open("postgres", s)
 }
 
 func setupBunDB(sqldb *sql.DB) (*bun.DB, error) {

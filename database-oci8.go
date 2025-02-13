@@ -5,6 +5,8 @@ package main
 import (
 	"database/sql"
 
+	_ "github.com/mattn/go-oci8"
+
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/oracledialect"
 	"github.com/uptrace/bun/extra/bundebug"
