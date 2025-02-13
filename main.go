@@ -12,8 +12,6 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/mattn/go-oci8"
-
 	"github.com/labstack/echo/v4"
 	"github.com/uptrace/bun"
 )

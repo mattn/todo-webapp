@@ -1,4 +1,5 @@
 //go:build !database_oci8 && !database_mysql
+// +build !database_oci8,!database_mysql
 
 package main
 
@@ -11,7 +12,7 @@ import (
 )
 
 func setupDB(s string) (*sql.DB, error) {
-	return sql.Open("oci8", s)
+	return sql.Open("pg", s)
 }
 
 func setupBunDB(sqldb *sql.DB) (*bun.DB, error) {
