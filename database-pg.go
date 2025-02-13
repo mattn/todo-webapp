@@ -12,7 +12,7 @@ import (
 )
 
 func setupDB(s string) (*sql.DB, error) {
-	return sql.Open("pg", s)
+	return sql.Open("pq", s)
 }
 
 func setupBunDB(sqldb *sql.DB) (*bun.DB, error) {
